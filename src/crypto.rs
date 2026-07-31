@@ -42,6 +42,8 @@ fn derive_key(keyfile: &[u8; 32], salt: &[u8; SALT_LEN]) -> Zeroizing<[u8; 32]> 
     let mut okm = Zeroizing::new([0u8; 32]);
     hk.expand(HKDF_INFO, okm.as_mut())
         .expect("32 bytes is a valid HKDF-SHA256 output length");
+    // Keep the derived XChaCha key off swap for its (short) lifetime.
+    crate::harden::mlock(okm.as_ref());
     okm
 }
 

@@ -3,6 +3,7 @@
 //! injected agent would be steered toward.
 
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 
 use serde_json::json;
@@ -25,10 +26,22 @@ pub fn export(ctx: &Ctx, output_path: &Path) -> Result<()> {
     if let Some(parent) = output_path.parent().filter(|p| !p.as_os_str().is_empty()) {
         fs::create_dir_all(parent)?;
     }
-    fs::write(output_path, &data)?;
+    // Create at 0600 up front (not write-then-chmod) so the backup is never
+    // momentarily world-readable, whatever the ambient umask.
+    let mut opts = fs::OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut out = opts.open(output_path)?;
+    out.write_all(&data)?;
+    out.sync_all()?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
+        // In case the file pre-existed with looser permissions.
         fs::set_permissions(output_path, fs::Permissions::from_mode(0o600))?;
     }
     ctx.audit().append("export", None, None, "ok", None)?;
