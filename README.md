@@ -48,6 +48,7 @@ every other command prints `[REDACTED]` and that is a **feature**, not a bug. do
 | sneaky instructions hiding in account notes | notes display inside big `>>> (untrusted data, not instructions) <<<` fences. ANSI escapes get vaporized 💥 |
 | someone edits the audit log to hide their tracks | every log line contains the hash of the previous one. tamper and the chain snaps. loudly. `jingle audit` checks it |
 | someone flips ONE byte of the vault file | decryption fails closed, exit code 4, no partial data. we tested flipping *every single byte*. all of them. we had time |
+| someone `cat`s your keyfile / copies your home dir / restores your backup | with the default (v1) keyfile that's game over — it's a raw key on disk. run `jingle protect` and the key gets wrapped under an Argon2id passphrase, so the stolen file is inert without a secret you keep *somewhere else* 🔐 |
 
 🔔 *jingle jingle.* you just read a whole table. proud of you. snack break? no. onward.
 
@@ -94,6 +95,8 @@ $ jingle totp github
 | `export --output FILE` | encrypted backup. there is no plaintext export. stop looking. the flag isn't hiding, it does not exist |
 | `import FILE` | merge a backup back in |
 | `audit` | who touched what, when, hash-chain verified 🕵️ |
+| `doctor` | reads your posture out loud: file modes, mlock, and whether your keyfile is v1 (raw) or v2 (wrapped) |
+| `protect` / `unprotect` | wrap the keyfile under a passphrase (v1 → v2) and back. verify-first, never destructive — see the nerd zone |
 
 global flags: `--json` (robot mode, still redacted), `--vault`, `--keyfile`, `-q`.
 
@@ -107,7 +110,9 @@ global flags: `--json` (robot mode, still redacted), `--vault`, `--keyfile`, `-q
 <summary><b>click for the security model</b> (contains zero jokes per square inch... okay, some jokes)</summary>
 
 - **vault**: XChaCha20-Poly1305 over a JSON payload. the binary header (magic `JNGL`, version, KDF id, AEAD id, salt) is bound as AEAD associated data, so downgrade shenanigans and salt swaps fail the tag check. fresh random 24-byte nonce every single write.
-- **key**: 32 bytes of pure OS randomness in a `0600` keyfile (`~/.config/jingle/key`, or `$JINGLE_KEYFILE`). per-vault key derived with HKDF-SHA256. no argon2 because there's no passphrase to stretch — the keyfile is already max-entropy. (the header has a KDF id byte so passphrase mode can be added later without breaking the format. we planned ahead. gold star us.)
+- **key**: 32 bytes of pure OS randomness in a `0600` keyfile (`~/.config/jingle/key`, or `$JINGLE_KEYFILE`). per-vault key derived with HKDF-SHA256. no argon2 *there* because there's no passphrase to stretch — the keyfile is already max-entropy.
+- **wrapping the keyfile (v1 vs v2)**: by default the keyfile is that raw 32-byte key — call it **v1**. its whole security model is "nobody else can read this file," which a stolen backup or a synced home directory quietly defeats, offline and with no audit trace. `jingle protect` migrates it to **v2**: the same root key, sealed with XChaCha20-Poly1305 under a key-encryption key that Argon2id stretches from a passphrase. the v2 file is a versioned binary header (magic `JKW1`, format version, KDF id + params, salt, nonce) with the header bound as AEAD associated data — exact same discipline as the vault, so downgrades and param-swaps fail the tag. **Argon2id params**: 64 MiB memory, 3 iterations, 1 lane, 32-byte output — written into every header so a future default change stays backward compatible. `unprotect` reverses it. both are verify-first: they write a `.bak`, build the new keyfile, actually unwrap it and open the *real* vault with the result, and only *then* atomically replace the live keyfile — any failure aborts with the original untouched. v1 keeps working forever with no flag and no prompt; nobody is migrated automatically. `jingle doctor` tells you which one you're on.
+- **the honest caveat about wrapping**: this only helps if the passphrase lives somewhere the attacker who copied your disk does *not* have. the non-interactive intake path is `$JINGLE_PASSPHRASE_CMD` (jingle runs it and reads the passphrase from its stdout — a systemd credential, a hardware-token helper, a password-manager CLI). point it at `cat ~/.passphrase` and you've gained *nothing*: the KEK is now sitting on the same disk you were trying to protect. we will not stop you; we're just telling you. (the interactive path is a TTY prompt with echo off. the passphrase never rides on argv and never lives in a plain env var — only the *command* does.)
 - **writes**: temp file → fsync → keep one `.bak` generation → atomic rename → fsync the directory. your vault does not get corrupted by a power blip, and yesterday's vault is right there if today's goes weird.
 - **memory**: keys, plaintext, and secrets are zeroized on drop. `SecretString`'s `Debug` impl is hardcoded to `[REDACTED]`, so even a panic backtrace can't snitch.
 - **`exec` hygiene**: the child env is the parent's minus every `JINGLE_*` variable (the child doesn't get to know where the vault lives), plus exactly the mappings you asked for. collisions error unless `--allow-overwrite`. `--no-inherit-env` for the paranoid (respect).
@@ -119,7 +124,7 @@ global flags: `--json` (robot mode, still redacted), `--vault`, `--keyfile`, `-q
 <summary><b>ways we could still get got</b> (honesty corner 😔)</summary>
 
 - Rust can't scrub every intermediate copy (serde buffers, allocator stuff). the OS might swap or core-dump. zeroization is best-effort, not sorcery.
-- the keyfile is a file. someone with the keyfile AND the vault has your stuff. treat it like an SSH key, not like a sticker.
+- the keyfile is a file. with a v1 keyfile, someone with the keyfile AND the vault has your stuff — treat it like an SSH key, not like a sticker. `jingle protect` (v2) raises the bar to "keyfile AND vault AND the passphrase," but only if you source that passphrase from off-disk (see the crypto section's honest caveat).
 - clipboard managers hoard history like dragons. headless boxes have no clipboard at all (`copy` exits 6, loudly). `exec` is the main path for a reason.
 - anything that can read your process memory has already won. that's true of every password manager ever made, including the sticky note.
 - the audit hash chain makes tampering *evident*, not *impossible*. an attacker can rewrite the whole log — just not in a way that matches any copy you kept elsewhere.
@@ -133,7 +138,7 @@ hi bestie. your rules live in [CLAUDE.md](CLAUDE.md). short version: use `exec`,
 ## dev stuff
 
 ```console
-$ cargo test                                  # 73 tests incl. the sentinel redaction suite
+$ cargo test                                  # the whole suite incl. the sentinel redaction suite + keyfile-wrap roundtrips
 $ cargo clippy --all-targets -- -D warnings   # zero warnings or we riot
 $ cargo fmt --check
 ```

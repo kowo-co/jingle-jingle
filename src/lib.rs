@@ -14,8 +14,10 @@ pub mod crypto;
 pub mod genpass;
 pub mod harden;
 pub mod keyfile;
+pub mod keywrap;
 pub mod model;
 pub mod output;
+pub mod passphrase;
 pub mod paths;
 pub mod perms;
 pub mod redact;
@@ -51,6 +53,9 @@ pub enum Error {
 
     #[error("keyfile error: {0}")]
     Keyfile(String),
+
+    #[error("passphrase error: {0}")]
+    Passphrase(String),
 
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
@@ -88,6 +93,7 @@ impl Error {
             Error::Clipboard(_) => "clipboard_unavailable",
             Error::Usage(_) => "usage",
             Error::Keyfile(_) => "keyfile",
+            Error::Passphrase(_) => "passphrase",
             Error::Io(_) => "io",
             Error::Json(_) => "serialization",
             Error::Other(_) => "error",

@@ -11,6 +11,7 @@ use serde_json::json;
 
 use crate::commands::Ctx;
 use crate::harden::MlockState;
+use crate::keyfile::{self, Format};
 use crate::{Result, harden, perms};
 
 /// Posture of one tracked file.
@@ -68,6 +69,14 @@ pub fn run(ctx: &Ctx) -> Result<()> {
     let vault = FilePosture::inspect("vault", &ctx.paths.vault);
     let audit = FilePosture::inspect("audit log", &ctx.paths.audit);
 
+    // Which keyfile format is on disk? This is header-only — no passphrase, no
+    // decryption — so `doctor` never prompts.
+    let key_format = if keyfile.exists {
+        keyfile::detect(&ctx.paths.keyfile).ok()
+    } else {
+        None
+    };
+
     // Keyfile parent directory: another user who can write it can swap the
     // keyfile out. `keyfile::load` treats this as a hard failure; here we just
     // report it.
@@ -92,6 +101,16 @@ pub fn run(ctx: &Ctx) -> Result<()> {
         for issue in &f.issues {
             warnings.push(format!("{}: {issue}", f.label));
         }
+    }
+    if key_format == Some(Format::V1Raw) {
+        warnings.push(
+            "keyfile is v1 (unencrypted at rest): the 32-byte root key sits on disk protected \
+             only by file permissions, so anyone who can read this file — another shell as this \
+             user, root, a stolen or synced backup, one compromised process — has your entire \
+             vault, offline and with no audit trace. Disk access equals total compromise. Run \
+             `jingle protect` to wrap the key under a passphrase."
+                .into(),
+        );
     }
     if let (Some(dir), true) = (key_dir, key_dir_writable) {
         warnings.push(format!(
@@ -133,6 +152,7 @@ pub fn run(ctx: &Ctx) -> Result<()> {
                 },
                 "mlock": mlock.as_str(),
                 "same_directory": same_dir,
+                "keyfile_format": key_format.map(format_str),
                 "keyfile": keyfile.json(),
                 "keyfile_dir": {
                     "path": key_dir.map(|p| p.display().to_string()),
@@ -153,6 +173,16 @@ pub fn run(ctx: &Ctx) -> Result<()> {
     print_file(&vault);
     print_file(&audit);
     println!();
+    println!(
+        "  keyfile format: {}",
+        match key_format {
+            Some(Format::V1Raw) =>
+                "v1 (raw key — UNENCRYPTED at rest; disk access = total compromise)".to_string(),
+            Some(Format::V2Wrapped) => "v2 (passphrase-wrapped)".to_string(),
+            None if !keyfile.exists => "-".to_string(),
+            None => "unrecognized".to_string(),
+        }
+    );
     println!(
         "  core dumps / same-uid ptrace: {}",
         match dumpable {
@@ -188,6 +218,13 @@ pub fn run(ctx: &Ctx) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn format_str(f: Format) -> &'static str {
+    match f {
+        Format::V1Raw => "v1",
+        Format::V2Wrapped => "v2",
+    }
 }
 
 fn print_file(f: &FilePosture) {
