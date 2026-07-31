@@ -1,8 +1,21 @@
 //! Keyfile handling: 32 bytes of OS randomness, mode 0600.
 //!
 //! The keyfile is full-entropy key material, which is why HKDF (not a
-//! memory-hard KDF) is the right derivation step — there is no low-entropy
-//! passphrase to stretch.
+//! memory-hard KDF) is the right derivation step to open the vault — there is
+//! no low-entropy passphrase to stretch.
+//!
+//! Two on-disk formats exist and `load` transparently accepts either:
+//!
+//!   * **v1** — the raw 32-byte root key. This is the default `jingle init`
+//!     writes, and it keeps working forever with no flag and no prompt. Its
+//!     weakness is total: anyone who can read the file has the whole vault.
+//!   * **v2** — the same root key sealed under a passphrase-derived KEK (see
+//!     [`crate::keywrap`]). `jingle protect` migrates v1→v2; `jingle unprotect`
+//!     reverses it. Loading a v2 keyfile requires a passphrase (see
+//!     [`crate::passphrase`]).
+//!
+//! Detection is by the v2 magic header; a 32-byte file without it is v1. Every
+//! caller above `load` is oblivious to which format is on disk.
 
 use std::fs;
 use std::io::Write;
@@ -13,6 +26,32 @@ use zeroize::Zeroizing;
 use crate::{Error, Result};
 
 pub const KEY_LEN: usize = 32;
+
+/// Which on-disk keyfile format a path holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Format {
+    /// Raw 32-byte root key (the historical, default format).
+    V1Raw,
+    /// Passphrase-wrapped root key (`jingle protect`).
+    V2Wrapped,
+}
+
+/// Inspect a keyfile's format from its header alone — no passphrase, no
+/// decryption. Used by `jingle doctor` to report posture.
+pub fn detect(path: &Path) -> Result<Format> {
+    let bytes = fs::read(path)?;
+    if crate::keywrap::is_wrapped(&bytes) {
+        Ok(Format::V2Wrapped)
+    } else if bytes.len() == KEY_LEN {
+        Ok(Format::V1Raw)
+    } else {
+        Err(Error::Keyfile(format!(
+            "keyfile {} is neither a 32-byte v1 key nor a v2 wrapped keyfile (size {})",
+            path.display(),
+            bytes.len()
+        )))
+    }
+}
 
 /// Create a new keyfile with fresh OS randomness. Refuses to overwrite unless
 /// `force` is set. The file is created with permissions 0600 on Unix.
@@ -104,21 +143,31 @@ pub fn load(path: &Path) -> Result<Zeroizing<[u8; KEY_LEN]>> {
         }
     }
 
-    if meta.len() != KEY_LEN as u64 {
-        return Err(Error::Keyfile(format!(
-            "keyfile {} has unexpected size {} (expected {KEY_LEN} bytes)",
-            path.display(),
-            meta.len()
-        )));
+    let bytes = Zeroizing::new(fs::read(path)?);
+    // Lock the raw file bytes into RAM before they land anywhere durable.
+    crate::harden::mlock(bytes.as_ref());
+
+    // v2: the magic header means the root key is sealed under a passphrase.
+    // Unwrap it; everything above this call is unchanged whichever format wins.
+    if crate::keywrap::is_wrapped(&bytes) {
+        let passphrase = crate::passphrase::acquire(false)?;
+        return crate::keywrap::unwrap(&bytes, &passphrase);
     }
 
-    let bytes = Zeroizing::new(fs::read(path)?);
-    // Lock the raw keyfile bytes into RAM before they land anywhere durable.
-    crate::harden::mlock(bytes.as_ref());
-    let mut key = Zeroizing::new([0u8; KEY_LEN]);
-    key.copy_from_slice(&bytes);
-    crate::harden::mlock(key.as_ref());
-    Ok(key)
+    // v1: a bare 32-byte key. Load it exactly as before.
+    if bytes.len() == KEY_LEN {
+        let mut key = Zeroizing::new([0u8; KEY_LEN]);
+        key.copy_from_slice(&bytes);
+        crate::harden::mlock(key.as_ref());
+        return Ok(key);
+    }
+
+    let _ = meta;
+    Err(Error::Keyfile(format!(
+        "keyfile {} has unexpected size {} (expected a 32-byte v1 key or a v2 wrapped keyfile)",
+        path.display(),
+        bytes.len()
+    )))
 }
 
 #[cfg(test)]
