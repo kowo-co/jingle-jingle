@@ -273,6 +273,10 @@ pub enum Cmd {
         limit: usize,
     },
 
+    /// Report the at-rest and in-memory security posture (paths, modes,
+    /// dumpable/mlock state) and warn about anything weak
+    Doctor,
+
     /// (internal) clear the clipboard after a delay if it still holds the copied value
     #[command(name = "__clear-clipboard", hide = true)]
     ClearClipboard {

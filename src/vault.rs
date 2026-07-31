@@ -48,6 +48,9 @@ impl Vault {
                 path.display()
             ))
         })?;
+        // Loose vault perms are a warning, not a failure: an install predating
+        // this check must still open.
+        crate::perms::warn_if_loose(path, "vault");
         let (salt, plaintext) = crypto::open(&key, &data)?;
         let payload: VaultPayload = serde_json::from_slice(&plaintext)
             .map_err(|_| Error::Tamper("vault decrypted but payload is malformed".into()))?;

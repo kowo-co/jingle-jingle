@@ -2,6 +2,7 @@
 
 pub mod audit_cmd;
 pub mod crud;
+pub mod doctor;
 pub mod egress;
 pub mod init;
 pub mod transfer;
@@ -72,6 +73,7 @@ fn cmd_label(cmd: &Cmd) -> &'static str {
         Cmd::Export { .. } => "export",
         Cmd::Import { .. } => "import",
         Cmd::Audit { .. } => "audit",
+        Cmd::Doctor => "doctor",
         Cmd::ClearClipboard { .. } => "__clear-clipboard",
     }
 }
@@ -163,6 +165,7 @@ pub fn run(cli: Cli) -> Result<i32> {
         Cmd::Export { output } => transfer::export(&ctx, &output),
         Cmd::Import { file, overwrite } => transfer::import(&ctx, &file, overwrite),
         Cmd::Audit { limit } => audit_cmd::run(&ctx, limit),
+        Cmd::Doctor => doctor::run(&ctx),
         Cmd::ClearClipboard { after } => egress::clear_clipboard(after),
     }?;
     Ok(0)

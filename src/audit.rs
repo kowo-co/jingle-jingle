@@ -62,6 +62,9 @@ impl AuditLog {
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent)?;
         }
+        // A world-writable audit log lets the tamper-evidence trail be rewritten
+        // in place. Warn (once) but keep appending — never break an upgrade.
+        crate::perms::warn_if_loose(&self.path, "audit log");
         let prev = match last_line(&self.path)? {
             Some(line) => hash_line(&line),
             None => GENESIS_PREV.to_owned(),
