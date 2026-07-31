@@ -25,9 +25,10 @@ use crate::{Error, Result};
 pub const ENV_PASSPHRASE_CMD: &str = "JINGLE_PASSPHRASE_CMD";
 
 const NO_SOURCE_MSG: &str = "this keyfile is passphrase-protected (v2) but no passphrase source is available. \
-Either run jingle from an interactive terminal so it can prompt you, or set \
-JINGLE_PASSPHRASE_CMD to a command whose stdout is the passphrase \
-(e.g. a systemd credential or a hardware-token helper).";
+Run `jingle unlock` once to hold the key in the unlock agent (then this and \
+later commands need no passphrase), or run jingle from an interactive terminal \
+so it can prompt you, or set JINGLE_PASSPHRASE_CMD to a command whose stdout is \
+the passphrase (e.g. a systemd credential or a hardware-token helper).";
 
 /// Acquire a passphrase. When `confirm` is set (creating a new wrapped keyfile)
 /// the interactive path prompts twice and requires the entries to match; the

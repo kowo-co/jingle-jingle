@@ -24,7 +24,16 @@ impl TestVault {
         let mut c = Command::cargo_bin("jingle").unwrap();
         c.env("JINGLE_DATA_DIR", self.dir.path().join("data"));
         c.env("JINGLE_KEYFILE", self.dir.path().join("key"));
+        // Pin the unlock-agent socket into this vault's tempdir so tests never
+        // collide with each other's agents (or a real one on the dev box). This
+        // takes precedence over $XDG_RUNTIME_DIR in path resolution.
+        c.env("JINGLE_AGENT_SOCK", self.agent_sock_path());
         c
+    }
+
+    /// The unlock-agent socket path this vault's commands use.
+    pub fn agent_sock_path(&self) -> PathBuf {
+        self.dir.path().join("agent").join("agent.sock")
     }
 
     pub fn keyfile_path(&self) -> PathBuf {

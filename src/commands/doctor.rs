@@ -93,6 +93,10 @@ pub fn run(ctx: &Ctx) -> Result<()> {
     let dumpable = harden::dumpable();
     let mlock = harden::probe_mlock();
 
+    // Is an unlock agent holding the key right now, and for how much longer?
+    // This connects to the socket (cheap) but never triggers a passphrase.
+    let agent = crate::agent::status(&ctx.paths.agent_sock).ok().flatten();
+
     let same_dir = same_directory(&ctx.paths.keyfile, &ctx.paths.vault);
 
     // Collect warnings in the order a human should read them.
@@ -152,6 +156,12 @@ pub fn run(ctx: &Ctx) -> Result<()> {
                 },
                 "mlock": mlock.as_str(),
                 "same_directory": same_dir,
+                "agent": {
+                    "live": agent.is_some(),
+                    "pid": agent.map(|a| a.pid),
+                    "remaining_secs": agent.map(|a| a.remaining.as_secs()),
+                    "socket": ctx.paths.agent_sock.display().to_string(),
+                },
                 "keyfile_format": key_format.map(format_str),
                 "keyfile": keyfile.json(),
                 "keyfile_dir": {
@@ -205,6 +215,19 @@ pub fn run(ctx: &Ctx) -> Result<()> {
             "SHARED — key and vault sit together".to_string()
         } else {
             "separate (good)".to_string()
+        }
+    );
+    println!(
+        "  unlock agent: {}",
+        match agent {
+            Some(a) => format!(
+                "live (pid {}, expires in {})",
+                a.pid,
+                crate::commands::vault_agent::human_remaining(a.remaining)
+            ),
+            None if key_format == Some(Format::V2Wrapped) =>
+                "not running (run `jingle unlock` so commands need no passphrase)".to_string(),
+            None => "not running".to_string(),
         }
     );
 

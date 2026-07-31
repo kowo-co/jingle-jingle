@@ -249,15 +249,30 @@ pub enum Cmd {
         rename: Option<String>,
     },
 
-    /// Lock an entry: secret egress then requires --confirm-locked
-    Lock { name: String },
+    /// Lock an entry (secret egress then needs --confirm-locked), or — with no
+    /// NAME — lock the vault by terminating the unlock agent and zeroizing the key
+    Lock {
+        /// Entry to lock. Omit to lock the vault (stop the unlock agent).
+        name: Option<String>,
+    },
 
-    /// Unlock a previously locked entry
+    /// Unlock a locked entry, or — with no NAME — unlock the wrapped vault:
+    /// prompt once, then hold the key in a detached agent so later commands need
+    /// no passphrase (default TTL 8h)
     Unlock {
-        name: String,
-        /// Skip the confirmation prompt
+        /// Entry to unlock. Omit to unlock the vault (start the unlock agent).
+        name: Option<String>,
+        /// Skip the confirmation prompt (entry form only)
         #[arg(long)]
         yes: bool,
+        /// How long the unlock agent holds the key: e.g. 8h, 30m, 90s, 2d, or a
+        /// bare number of seconds [default: 8h] (vault form only)
+        #[arg(long, value_name = "DURATION")]
+        ttl: Option<String>,
+        /// Report whether the unlock agent is live and its remaining TTL, instead
+        /// of unlocking (vault form only)
+        #[arg(long)]
+        status: bool,
     },
 
     /// Write an encrypted backup of the vault (same key; NOT a plaintext export)

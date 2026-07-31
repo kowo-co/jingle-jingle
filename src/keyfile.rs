@@ -105,7 +105,19 @@ pub fn create(path: &Path, force: bool) -> Result<()> {
 }
 
 /// Load the keyfile, refusing group/world-accessible files on Unix.
-pub fn load(path: &Path) -> Result<Zeroizing<[u8; KEY_LEN]>> {
+///
+/// For a v2 (wrapped) keyfile the root key is resolved in this order:
+///   1. the unlock agent's socket (`agent_sock`), if a live agent is holding
+///      the key — no prompt;
+///   2. `$JINGLE_PASSPHRASE_CMD` (via [`crate::passphrase::acquire`]);
+///   3. an interactive TTY prompt;
+///   4. an actionable error naming `jingle unlock`.
+///
+/// `agent_sock` is `None` for callers that must never consult the agent
+/// (`jingle protect`, which operates on a v1 key, and the unit tests). A v1 raw
+/// keyfile never consults the agent regardless: the wrapped-format branch below
+/// is the only place the agent is reached.
+pub fn load(path: &Path, agent_sock: Option<&Path>) -> Result<Zeroizing<[u8; KEY_LEN]>> {
     let meta = fs::metadata(path).map_err(|_| {
         Error::Keyfile(format!(
             "keyfile not found at {} (run `jingle init` first, or set JINGLE_KEYFILE)",
@@ -150,6 +162,13 @@ pub fn load(path: &Path) -> Result<Zeroizing<[u8; KEY_LEN]>> {
     // v2: the magic header means the root key is sealed under a passphrase.
     // Unwrap it; everything above this call is unchanged whichever format wins.
     if crate::keywrap::is_wrapped(&bytes) {
+        // 1. A live unlock agent short-circuits every prompt.
+        if let Some(sock) = agent_sock {
+            if let Some(key) = crate::agent::try_fetch_key(sock)? {
+                return Ok(key);
+            }
+        }
+        // 2/3/4. Passphrase command, then TTY prompt, then an actionable error.
         let passphrase = crate::passphrase::acquire(false)?;
         return crate::keywrap::unwrap(&bytes, &passphrase);
     }
@@ -179,12 +198,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("key");
         create(&path, false).unwrap();
-        let key = load(&path).unwrap();
+        let key = load(&path, None).unwrap();
         assert_eq!(key.len(), KEY_LEN);
         // Refuses to overwrite without force.
         assert!(create(&path, false).is_err());
         create(&path, true).unwrap();
-        let key2 = load(&path).unwrap();
+        let key2 = load(&path, None).unwrap();
         assert_ne!(key.as_ref(), key2.as_ref());
     }
 
@@ -198,7 +217,7 @@ mod tests {
         // A keyfile with tight perms is still unsafe if its directory is
         // writable by others: they can rename it aside and drop in their own.
         std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o777)).unwrap();
-        let err = load(&path).unwrap_err();
+        let err = load(&path, None).unwrap_err();
         assert!(matches!(err, Error::Keyfile(_)));
         assert!(format!("{err}").contains("parent directory"));
     }
@@ -211,7 +230,7 @@ mod tests {
         let path = dir.path().join("key");
         create(&path, false).unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
-        let err = load(&path).unwrap_err();
+        let err = load(&path, None).unwrap_err();
         assert!(matches!(err, Error::Keyfile(_)));
     }
 }

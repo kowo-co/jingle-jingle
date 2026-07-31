@@ -7,6 +7,7 @@ pub mod egress;
 pub mod init;
 pub mod protect;
 pub mod transfer;
+pub mod vault_agent;
 
 use std::io::{BufRead, IsTerminal, Read, Write};
 
@@ -35,7 +36,7 @@ impl Ctx {
     }
 
     pub fn load_key(&self) -> Result<Zeroizing<[u8; 32]>> {
-        keyfile::load(&self.paths.keyfile)
+        keyfile::load(&self.paths.keyfile, Some(&self.paths.agent_sock))
     }
 
     /// Load the vault; integrity failures are recorded in the audit log
@@ -165,8 +166,31 @@ pub fn run(cli: Cli) -> Result<i32> {
             tags,
             rename,
         } => crud::edit(&ctx, &name, service, username, url, notes, tags, rename),
-        Cmd::Lock { name } => crud::set_locked(&ctx, &name, true, true),
-        Cmd::Unlock { name, yes } => crud::set_locked(&ctx, &name, false, yes),
+        Cmd::Lock { name } => match name {
+            // With a name: lock that entry. Without: lock the vault (stop the agent).
+            Some(n) => crud::set_locked(&ctx, &n, true, true),
+            None => vault_agent::lock_vault(&ctx),
+        },
+        Cmd::Unlock {
+            name,
+            yes,
+            ttl,
+            status,
+        } => match name {
+            Some(n) => {
+                if ttl.is_some() || status {
+                    return Err(Error::Usage(
+                        "--ttl and --status apply to the vault unlock (with no entry name), not to unlocking an entry".into(),
+                    ));
+                }
+                crud::set_locked(&ctx, &n, false, yes)
+            }
+            None if status => vault_agent::status(&ctx),
+            None => {
+                let ttl = ttl.as_deref().map(vault_agent::parse_ttl).transpose()?;
+                vault_agent::unlock_vault(&ctx, ttl)
+            }
+        },
         Cmd::Export { output } => transfer::export(&ctx, &output),
         Cmd::Import { file, overwrite } => transfer::import(&ctx, &file, overwrite),
         Cmd::Audit { limit } => audit_cmd::run(&ctx, limit),

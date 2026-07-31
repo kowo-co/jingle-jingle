@@ -8,7 +8,7 @@ use crate::{Result, keyfile, output};
 
 pub fn run(ctx: &Ctx, force: bool) -> Result<()> {
     keyfile::create(&ctx.paths.keyfile, force)?;
-    let key = keyfile::load(&ctx.paths.keyfile)?;
+    let key = keyfile::load(&ctx.paths.keyfile, None)?;
     Vault::create(&ctx.paths.vault, key, force)?;
     ctx.audit().append("init", None, None, "ok", None)?;
 
