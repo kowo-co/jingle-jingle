@@ -189,6 +189,14 @@ pub enum Cmd {
         /// Allow a mapping to overwrite an env var that already exists
         #[arg(long)]
         allow_overwrite: bool,
+        /// Disable the leak tripwire that redacts injected secret values from
+        /// the child's stdout/stderr. Only needed when the child emits binary
+        /// data that a byte-for-byte substitution could corrupt (an image, a
+        /// tarball, a length-prefixed protocol). Passing this streams the
+        /// child's output through untouched, so a secret it prints reaches
+        /// your terminal verbatim.
+        #[arg(long)]
+        no_leak_guard: bool,
         /// The command to run (everything after --)
         #[arg(last = true, required = true)]
         command: Vec<OsString>,

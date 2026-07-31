@@ -8,6 +8,21 @@ Follow these rules whenever you touch it.
 - **You never see secret values, by design.** To use one, inject it into a
   child process: `jingle exec -s <entry>=ENV_VAR [-s <entry>:<field>=OTHER_VAR] -- <command...>`.
   The command reads the secret from its environment; your context stays clean.
+- **Leak tripwire.** `exec` watches the child's stdout/stderr for the exact
+  values it injected and replaces any that appear with `[REDACTED by jingle]`
+  before the bytes reach your terminal — so a child running `env`, `set -x`, a
+  verbose `curl`, or a crash dump can't spill a secret into your context. When
+  it fires it prints one `WARNING` to stderr naming the leaking `entry:field`
+  and stream (never the value) and records a `leaked` outcome in `jingle audit`;
+  **a warning means that credential was printed by the child — treat it as
+  compromised and rotate it.** The scan is streaming (no output buffering) and
+  handles values split across read boundaries. Values shorter than 8 bytes are
+  not scanned: a short secret (a PIN, a 6-char password) collides with ordinary
+  output and would false-positive everywhere, mangling the stream. Pass
+  `--no-leak-guard` to stream the child's output through untouched — only needed
+  when the child emits binary data (an image, a tarball, a length-prefixed
+  protocol) that a byte substitution could corrupt; the secret then reaches your
+  terminal verbatim if the child prints it.
 - For 2FA codes: `jingle totp <entry>` prints the current 6-digit code. That
   code expires within 30 seconds and is safe to see. The seed behind it never
   prints.
