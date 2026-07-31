@@ -9,8 +9,10 @@ fn injects_secret_into_child_env() {
     tv.add_with_secret("github", "sup3r-s3cret-value");
     let shell = TestVault::echo_env_command("GH_PASS");
 
+    // Echoing the secret back is exactly what the leak guard redacts, so this
+    // injection check runs with the guard off.
     let mut cmd = tv.cmd();
-    cmd.args(["exec", "-s", "github=GH_PASS", "--"]);
+    cmd.args(["exec", "--no-leak-guard", "-s", "github=GH_PASS", "--"]);
     cmd.args(&shell);
     let out = cmd.assert().success().get_output().clone();
     assert_eq!(

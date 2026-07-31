@@ -127,6 +127,7 @@ pub fn run(cli: Cli) -> Result<i32> {
             confirm_locked,
             no_inherit_env,
             allow_overwrite,
+            no_leak_guard,
             command,
         } => {
             return egress::exec(
@@ -135,6 +136,7 @@ pub fn run(cli: Cli) -> Result<i32> {
                 &confirm_locked,
                 no_inherit_env,
                 allow_overwrite,
+                no_leak_guard,
                 &command,
             );
         }
