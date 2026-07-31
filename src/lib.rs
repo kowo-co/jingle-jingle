@@ -7,6 +7,7 @@
 //! (d) the explicitly flagged `jingle generate --print`.
 //! Every other command may emit names, paths, and `[REDACTED]` — never values.
 
+pub mod agent;
 pub mod audit;
 pub mod cli;
 pub mod commands;

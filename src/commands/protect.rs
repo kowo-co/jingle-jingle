@@ -35,7 +35,7 @@ pub fn protect(ctx: &Ctx) -> Result<()> {
 
     // Load the current root key. This also runs the permission checks and
     // confirms the v1 keyfile is well-formed before we touch anything.
-    let root_key = keyfile::load(kf)?;
+    let root_key = keyfile::load(kf, None)?;
 
     // A NEW passphrase: prompted twice on a TTY, or taken from
     // $JINGLE_PASSPHRASE_CMD's stdout. Never argv, never a plain env var.
