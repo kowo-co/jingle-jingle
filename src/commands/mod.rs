@@ -5,7 +5,6 @@ pub mod crud;
 pub mod doctor;
 pub mod egress;
 pub mod init;
-pub mod protect;
 pub mod transfer;
 
 use std::io::{BufRead, IsTerminal, Read, Write};
@@ -75,8 +74,6 @@ fn cmd_label(cmd: &Cmd) -> &'static str {
         Cmd::Import { .. } => "import",
         Cmd::Audit { .. } => "audit",
         Cmd::Doctor => "doctor",
-        Cmd::Protect => "protect",
-        Cmd::Unprotect => "unprotect",
         Cmd::ClearClipboard { .. } => "__clear-clipboard",
     }
 }
@@ -132,6 +129,7 @@ pub fn run(cli: Cli) -> Result<i32> {
             confirm_locked,
             no_inherit_env,
             allow_overwrite,
+            no_leak_guard,
             command,
         } => {
             return egress::exec(
@@ -140,6 +138,7 @@ pub fn run(cli: Cli) -> Result<i32> {
                 &confirm_locked,
                 no_inherit_env,
                 allow_overwrite,
+                no_leak_guard,
                 &command,
             );
         }
@@ -169,8 +168,6 @@ pub fn run(cli: Cli) -> Result<i32> {
         Cmd::Import { file, overwrite } => transfer::import(&ctx, &file, overwrite),
         Cmd::Audit { limit } => audit_cmd::run(&ctx, limit),
         Cmd::Doctor => doctor::run(&ctx),
-        Cmd::Protect => protect::protect(&ctx),
-        Cmd::Unprotect => protect::unprotect(&ctx),
         Cmd::ClearClipboard { after } => egress::clear_clipboard(after),
     }?;
     Ok(0)

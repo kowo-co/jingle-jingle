@@ -189,6 +189,14 @@ pub enum Cmd {
         /// Allow a mapping to overwrite an env var that already exists
         #[arg(long)]
         allow_overwrite: bool,
+        /// Disable the leak tripwire that redacts injected secret values from
+        /// the child's stdout/stderr. Only needed when the child emits binary
+        /// data that a byte-for-byte substitution could corrupt (an image, a
+        /// tarball, a length-prefixed protocol). Passing this streams the
+        /// child's output through untouched, so a secret it prints reaches
+        /// your terminal verbatim.
+        #[arg(long)]
+        no_leak_guard: bool,
         /// The command to run (everything after --)
         #[arg(last = true, required = true)]
         command: Vec<OsString>,
@@ -276,16 +284,6 @@ pub enum Cmd {
     /// Report the at-rest and in-memory security posture (paths, modes,
     /// dumpable/mlock state) and warn about anything weak
     Doctor,
-
-    /// Wrap the keyfile under a passphrase (v1 → v2): encrypts the root key at
-    /// rest so disk access alone no longer opens the vault. Verify-first and
-    /// non-destructive. Passphrase comes from a TTY prompt or
-    /// $JINGLE_PASSPHRASE_CMD.
-    Protect,
-
-    /// Reverse `protect` (v2 → v1): unwrap the keyfile back to a raw key. Same
-    /// verify-first discipline. Requires the current passphrase.
-    Unprotect,
 
     /// (internal) clear the clipboard after a delay if it still holds the copied value
     #[command(name = "__clear-clipboard", hide = true)]
