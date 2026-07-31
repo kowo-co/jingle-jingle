@@ -285,6 +285,16 @@ pub enum Cmd {
     /// dumpable/mlock state) and warn about anything weak
     Doctor,
 
+    /// Wrap the keyfile under a passphrase (v1 → v2): encrypts the root key at
+    /// rest so disk access alone no longer opens the vault. Verify-first and
+    /// non-destructive. Passphrase comes from a TTY prompt or
+    /// $JINGLE_PASSPHRASE_CMD.
+    Protect,
+
+    /// Reverse `protect` (v2 → v1): unwrap the keyfile back to a raw key. Same
+    /// verify-first discipline. Requires the current passphrase.
+    Unprotect,
+
     /// (internal) clear the clipboard after a delay if it still holds the copied value
     #[command(name = "__clear-clipboard", hide = true)]
     ClearClipboard {
